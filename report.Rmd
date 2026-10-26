@@ -1,0 +1,210 @@
+---
+title: "Global Life Expectancy and Socioeconomic Factors"
+subtitle: "Descriptive Data Analysis Report"
+author: "Data Analysis Project"
+date: "October 2026"
+output:
+  pdf_document:
+    toc: false
+    number_sections: true
+    fig_caption: true
+    latex_engine: pdflatex
+    keep_tex: false
+geometry: margin=2.5cm
+fontsize: 11pt
+header-includes:
+  - \usepackage{float}
+  - \usepackage{booktabs}
+  - \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 7,
+  fig.height = 4.5,
+  out.width = "95%"
+)
+
+# Load libraries
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(knitr)
+
+# Read data
+df <- read_csv("data/life_expectancy_data.csv", show_col_types = FALSE)
+
+# Consistent theme
+theme_report <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title    = element_text(face = "bold", hjust = 0.5, size = 12),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray40", size = 9),
+    axis.title    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+```
+
+# Introduction
+
+Life expectancy is one of the most widely used indicators of a country's overall health and development status. It reflects the combined effects of healthcare quality, economic prosperity, education, and public policy. Understanding the factors associated with life expectancy differences across countries can provide valuable insights for policymakers and researchers.
+
+This report presents a **descriptive analysis** of life expectancy data for **50 countries** across five regions (Africa, Asia, Americas, Europe, and Oceania), examining its relationship with GDP per capita, healthcare expenditure, and adult literacy rate.
+
+## Data Source
+
+The dataset was compiled from publicly available data published by:
+
+- **World Bank Open Data** (https://data.worldbank.org) — GDP per capita, population, literacy rate
+- **WHO Global Health Observatory** (https://www.who.int/data/gho) — Life expectancy, healthcare expenditure
+
+The dataset contains 50 observations across 7 variables: Country, Region, Life Expectancy (years), GDP Per Capita (USD), Healthcare Expenditure (% of GDP), Population (millions), and Adult Literacy Rate (%).
+
+# Descriptive Statistics
+
+```{r summary-table}
+numeric_cols <- c("Life_Expectancy", "GDP_Per_Capita",
+                  "Healthcare_Expenditure_Pct", "Population_Millions",
+                  "Adult_Literacy_Rate")
+
+desc_stats <- df %>%
+  summarise(across(all_of(numeric_cols),
+                   list(
+                     Mean   = ~round(mean(., na.rm = TRUE), 1),
+                     Median = ~round(median(., na.rm = TRUE), 1),
+                     SD     = ~round(sd(., na.rm = TRUE), 1),
+                     Min    = ~round(min(., na.rm = TRUE), 1),
+                     Max    = ~round(max(., na.rm = TRUE), 1)
+                   ),
+                   .names = "{.col}__{.fn}")) %>%
+  pivot_longer(everything(),
+               names_to = c("Variable", "Statistic"),
+               names_sep = "__") %>%
+  pivot_wider(names_from = Statistic, values_from = value)
+
+# Clean variable names for display
+desc_stats$Variable <- c("Life Expectancy (yrs)", "GDP Per Capita (USD)",
+                          "Healthcare Exp. (% GDP)", "Population (M)",
+                          "Literacy Rate (%)")
+
+kable(desc_stats, caption = "Summary statistics for numeric variables.",
+      align = "lrrrrr", booktabs = TRUE)
+```
+
+The average life expectancy across the 50 countries is **`r round(mean(df$Life_Expectancy), 1)` years**, ranging from `r min(df$Life_Expectancy)` years (Nigeria) to `r max(df$Life_Expectancy)` years (Japan). GDP per capita shows substantial variation (SD = `r format(round(sd(df$GDP_Per_Capita), 0), big.mark = ",")` USD), reflecting the wide range of economic development levels in the sample.
+
+# Analysis and Visualizations
+
+## Distribution of Life Expectancy
+
+```{r histogram, fig.cap="Histogram showing the distribution of life expectancy. The dashed red line indicates the global mean."}
+ggplot(df, aes(x = Life_Expectancy)) +
+  geom_histogram(binwidth = 3, fill = "#3498db", color = "white", alpha = 0.85) +
+  geom_vline(aes(xintercept = mean(Life_Expectancy)),
+             color = "#e74c3c", linetype = "dashed", linewidth = 1) +
+  annotate("text", x = mean(df$Life_Expectancy) + 1.5, y = Inf, vjust = 2, hjust = 0,
+           label = paste("Mean =", round(mean(df$Life_Expectancy), 1)),
+           color = "#e74c3c", fontface = "bold", size = 3.5) +
+  labs(title = "Distribution of Life Expectancy Across Countries",
+       x = "Life Expectancy (Years)", y = "Number of Countries") +
+  theme_report
+```
+
+The distribution of life expectancy is **left-skewed**, with most countries clustered between 70 and 84 years. A group of African nations forms a lower tail between 54 and 66 years.
+
+## Life Expectancy by Region
+
+```{r boxplot, fig.cap="Boxplot of life expectancy grouped by region. Individual data points are overlaid."}
+region_order <- df %>%
+  group_by(Region) %>%
+  summarise(med = median(Life_Expectancy)) %>%
+  arrange(med) %>%
+  pull(Region)
+
+ggplot(df, aes(x = factor(Region, levels = region_order),
+               y = Life_Expectancy, fill = Region)) +
+  geom_boxplot(alpha = 0.75, outlier.color = "#e74c3c", outlier.size = 3) +
+  geom_jitter(width = 0.15, alpha = 0.4, size = 1.5) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Life Expectancy by Region",
+       x = "Region", y = "Life Expectancy (Years)") +
+  theme_report + theme(legend.position = "none")
+```
+
+**Europe** and **Oceania** show the highest median life expectancy (above 82 years), while **Africa** has the lowest median (approximately 64 years) with the widest interquartile range, indicating greater variability. The Americas and Asia fall in between, with Asia showing notable diversity due to the mix of high-income (Japan, South Korea) and lower-income nations.
+
+## Life Expectancy vs. GDP Per Capita
+
+```{r scatter-gdp, fig.cap="Scatter plot of life expectancy against GDP per capita, colored by region.", fig.height=5}
+ggplot(df, aes(x = GDP_Per_Capita, y = Life_Expectancy, color = Region)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_smooth(method = "loess", se = TRUE, color = "gray30",
+              linetype = "dashed", linewidth = 0.8, alpha = 0.15) +
+  scale_x_continuous(labels = comma) +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Life Expectancy vs. GDP Per Capita",
+       x = "GDP Per Capita (USD)", y = "Life Expectancy (Years)",
+       color = "Region") +
+  theme_report
+```
+
+There is a **positive association** between GDP per capita and life expectancy (r = `r round(cor(df$Life_Expectancy, df$GDP_Per_Capita), 3)`). However, the relationship follows a **logarithmic pattern**: life expectancy increases rapidly with GDP at lower income levels but plateaus among wealthier nations. This suggests that beyond a certain income threshold, additional wealth yields diminishing returns for longevity.
+
+## Life Expectancy vs. Healthcare Expenditure
+
+```{r scatter-health, fig.cap="Scatter plot of life expectancy against healthcare expenditure as percentage of GDP."}
+ggplot(df, aes(x = Healthcare_Expenditure_Pct, y = Life_Expectancy,
+               color = Region)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, color = "gray30",
+              linetype = "dashed", linewidth = 0.8, alpha = 0.15) +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Life Expectancy vs. Healthcare Expenditure",
+       x = "Healthcare Expenditure (% of GDP)", y = "Life Expectancy (Years)",
+       color = "Region") +
+  theme_report
+```
+
+Healthcare expenditure shows a **moderate positive correlation** with life expectancy (r = `r round(cor(df$Life_Expectancy, df$Healthcare_Expenditure_Pct), 3)`). Countries that allocate a greater share of GDP to healthcare tend to have higher life expectancy, though the scatter suggests that healthcare spending alone does not fully explain the differences.
+
+## Additional Visualization: Regional Averages
+
+```{r bar-region, fig.cap="Bar chart comparing average life expectancy across regions.", fig.height=3.5}
+region_summary <- df %>%
+  group_by(Region) %>%
+  summarise(Avg_Life_Exp = round(mean(Life_Expectancy), 1), .groups = "drop")
+
+ggplot(region_summary, aes(x = reorder(Region, Avg_Life_Exp),
+                            y = Avg_Life_Exp, fill = Region)) +
+  geom_col(alpha = 0.85, width = 0.6) +
+  geom_text(aes(label = paste0(Avg_Life_Exp, " yrs")),
+            hjust = -0.1, fontface = "bold", size = 3.5) +
+  scale_fill_brewer(palette = "Set2") +
+  coord_flip() + ylim(0, 95) +
+  labs(title = "Average Life Expectancy by Region", x = "", y = "Years") +
+  theme_report + theme(legend.position = "none")
+```
+
+# Conclusion
+
+This descriptive analysis of 50 countries reveals several key observations:
+
+1. **Regional disparities are significant.** European and Oceanian countries consistently achieve the highest life expectancy, while African nations face considerably lower averages with greater within-region variation.
+
+2. **GDP per capita is positively associated with life expectancy**, but the relationship is non-linear — improvements in life expectancy are most pronounced at lower income levels and diminish as GDP increases.
+
+3. **Healthcare expenditure and literacy rate** both show positive associations with life expectancy, suggesting that investment in health systems and education may contribute to improved health outcomes.
+
+4. **Africa's lower life expectancy** is associated with lower GDP, reduced healthcare spending, and lower literacy rates, pointing to multiple interrelated socioeconomic challenges.
+
+**Important Note:** This analysis is purely descriptive. The observed associations do not imply causal relationships. Establishing causality would require more rigorous statistical methods and the consideration of additional confounding variables.
+
+\vspace{0.5cm}
+\noindent\rule{\textwidth}{0.4pt}
+\small
+*Tools: R (`r R.version.string`), ggplot2, dplyr. Data compiled from World Bank and WHO sources.*
